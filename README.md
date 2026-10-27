@@ -40,7 +40,7 @@ Chromium-family cookie decryption can fail on Linux when the keyring is unavaila
 | `search` | search songs, videos, albums, artists, playlists |
 | `add` | add tracks by query or videoId, skipping duplicates |
 | `remove` | remove by position, range, or videoId |
-| `move` | reorder by position or `--before`/`--after` anchor |
+| `move` | reorder to a position or another track's slot |
 
 Positions are authoritative everywhere: they match what YouTube Music shows, and the surrounding toolchain assumes track tags equal positions.
 
@@ -52,16 +52,16 @@ uv run yt.py -p PLxxxxxxxxxxxx add "nightcore aurelle" "nightcore let you go" --
 uv run yt.py -p PLxxxxxxxxxxxx add dQw4w9WgXcQ --id
 uv run yt.py -p PLxxxxxxxxxxxx remove 12 15-18 --dry
 uv run yt.py -p PLxxxxxxxxxxxx remove 12 15-18 --yes
-uv run yt.py -p PLxxxxxxxxxxxx move 85 --after 84 --dry
+uv run yt.py -p PLxxxxxxxxxxxx move 85 84 --dry
 uv run yt.py -p PLxxxxxxxxxxxx move 85 90 --yes
-uv run yt.py -p PLxxxxxxxxxxxx move 6BcguYMzytA --before tyaPqW0bO5M --yes
+uv run yt.py -p PLxxxxxxxxxxxx move 6BcguYMzytA tyaPqW0bO5M --yes
 ```
 
 ### Semantics
 
 - `add` resolves each query with `filter=songs` and uses the top result. videoIds already in the playlist are skipped (`~` in human output, `skipped` in JSON) unless `--dupes`. Adds batch at 50 per request.
 - `remove` accepts `3`, `15-18`, or a videoId, in any mix.
-- `move` takes exactly one destination: a 1-based `DST`, `--before TARGET`, or `--after TARGET`. Insertion is insert-before internally, so "move 5 before 9" lands at position 8. `TARGET` may be a position or a videoId. Degenerate anchors are reported as `already in place`.
+- `move SRC DST` is remove-then-insert, like `list.insert`: `yt move 5 3` leaves track 5 at position 3 and shifts everything between. A numeric `DST` is the final 1-based position; a videoId `DST` means "take that track's slot" (insert before it). `SRC` may be a position or a videoId, and moving a track onto itself reports `already in place`.
 - `remove` and `move` refuse to run without `--yes` when stdin is not a TTY; on a TTY they prompt. `--dry` never mutates.
 - Mutations require edit rights: a session that is merely reading a public playlist gets exit code `5` with a read-only message instead of a server error.
 - Mutations are verified: the tool re-fetches the playlist and polls until the change is visible. Exit code `6` plus `"verified": false` means the call succeeded but has not settled — re-check with `show` before doing anything position-dependent. YouTube applies `edit_playlist` asynchronously; never chain moves off a stale snapshot.

@@ -669,10 +669,6 @@ def cmd_remove(args, out: Out, sess: Session) -> int:
 
 def cmd_move(args, out: Out, sess: Session) -> int:
     pid = playlist_of(args)
-    anchors = [a for a in (args.before, args.after) if a]
-    if len(anchors) > 1 or (anchors and args.dst is not None) or (not anchors and args.dst is None):
-        raise Failure("usage", "give exactly one destination: DST, --before X or --after X")
-
     for attempt in range(2):
         data, tracks = fetch(sess, pid)
         if not args.dry:
@@ -680,17 +676,16 @@ def cmd_move(args, out: Out, sess: Session) -> int:
         total = len(tracks)
         src = resolve_one(tracks, args.src)
         others = [t for i, t in enumerate(tracks) if i != src]
-        anchor = resolve_one(tracks, args.before or args.after) if (args.before or args.after) else None
-        if args.before:
-            target = anchor - 1 if anchor > src else anchor
-        elif args.after:
-            target = anchor + 1 if anchor < src else anchor
-        else:
-            target = args.dst - 1
-        if anchor == src:
+        spec = str(args.dst)
+        if spec.isdigit():
+            position = int(spec)
+            if not 1 <= position <= total:
+                raise Failure("usage", f"destination out of range: {position} (1..{total})")
+            target = position - 1
+        elif tracks[src].get("videoId") == spec:
             target = src
-        if not 0 <= target <= len(others):
-            raise Failure("usage", f"destination out of range: {target + 1} (1..{total})")
+        else:
+            target = resolve_one(others, spec)
 
         current = tracks[src]
         video_id = current.get("videoId")
@@ -797,11 +792,11 @@ def render_remove(payload: dict) -> None:
 
 
 def render_move(payload: dict) -> None:
+    if payload.get("note"):
+        print(f"{payload['title']} already at position {payload['to']}")
+        return
     if payload["dry"]:
         print(f"dry run: move {payload['from']} -> {payload['to']}: {payload['title']}")
-        return
-    if payload.get("note"):
-        print(f"{payload['title']} already at {payload['to']}")
         return
     state = "verified" if payload["verified"] else "UNCONFIRMED, re-check with `yt show`"
     print(f"moved {payload['from']} -> {payload['to']} ({state}): {payload['title']}")
@@ -833,7 +828,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  yt -p <playlist> add 'nightcore aurelle' --dry\n"
             "  yt -p <playlist> add 'nightcore aurelle' 'nightcore let you go'\n"
             "  yt -p <playlist> remove 12 15-18 --yes\n"
-            "  yt -p <playlist> move 85 --after 84\n"
+            "  yt -p <playlist> move 85 84\n"
             "  yt -j -p <playlist> show | jq '.tracks[0]'\n"
             "\n"
             "exit codes: 0 ok, 1 internal, 2 usage, 3 auth, 4 not found, 5 refused, 6 unverified, 7 network, 8 api"
@@ -864,21 +859,19 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("queries", nargs="+", metavar="QUERY")
     add.add_argument("--id", action="store_true", help="treat arguments as videoIds")
     add.add_argument("--dupes", action="store_true", help="add even if the videoId is already in the playlist")
-    add.add_argument("--dry", action="store_true", help="resolve matches without adding")
+    add.add_argument("--dry", action="store_true", help="preview matches without adding")
     add.set_defaults(fn=cmd_add)
 
     remove = sub.add_parser("remove", parents=[common], help="remove tracks by position, range or videoId")
     remove.add_argument("targets", nargs="+", metavar="TARGET")
-    remove.add_argument("--dry", action="store_true")
+    remove.add_argument("--dry", action="store_true", help="preview without removing")
     remove.add_argument("-y", "--yes", action="store_true", help="skip the confirmation prompt")
     remove.set_defaults(fn=cmd_remove)
 
-    move = sub.add_parser("move", parents=[common], help="move a track to a position or anchor")
+    move = sub.add_parser("move", parents=[common], help="move a track to a 1-based position or videoId slot")
     move.add_argument("src", metavar="SRC", help="1-based position or videoId")
-    move.add_argument("dst", nargs="?", type=int, metavar="DST", help="1-based destination position")
-    move.add_argument("--before", metavar="TARGET")
-    move.add_argument("--after", metavar="TARGET")
-    move.add_argument("--dry", action="store_true")
+    move.add_argument("dst", metavar="DST", help="final 1-based position, or a videoId whose slot to take")
+    move.add_argument("--dry", action="store_true", help="preview without moving")
     move.add_argument("-y", "--yes", action="store_true", help="skip the confirmation prompt")
     move.set_defaults(fn=cmd_move)
 
