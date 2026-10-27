@@ -1,0 +1,9 @@
+[project]
+name = "ytm"
+version = "0.2.0"
+requires-python = ">=3.13"
+dependencies = [
+    "browser-cookie3>=0.20.1",
+    "requests>=2.32",
+    "ytmusicapi>=1.12.3",
+]
